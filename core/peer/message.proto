@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package peer;
+option go_package = "./;peer";
+
+message Request {
+  enum Type {
+    SEND_MESSAGE = 0;
+    UPDATE_PEER = 1;
+  }
+
+  Type type = 1;
+  optional SendMessage sendMessage = 2;
+  optional UpdatePeer updatePeer = 3;
+}
+
+message SendMessage {
+  bytes data = 1;
+  int64 created = 2;
+  bytes id = 3;
+}
+
+message UpdatePeer {
+  optional bytes userHandle = 1;
+}

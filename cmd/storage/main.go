@@ -25,12 +25,12 @@ func main() {
 
 	flag.Parse()
 
-	if address == nil {
+	if *address == "" {
 		*address = "/ip4/0.0.0.0/tcp/5090"
 	}
-	if root == nil {
+	if *root == "" {
 		*root, _ = os.UserHomeDir()
-		*root = filepath.Join(*root, "s3node")
+		*root = filepath.Join(*root, ".s3node")
 	}
 
 	ipfs := protocol.NewIPFS(*ipfsAddress)

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/ipfs/go-ipns"
+	"github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	dualdht "github.com/libp2p/go-libp2p-kad-dht/dual"
@@ -32,6 +32,7 @@ func SetupLibp2p(
 	hostKey crypto.PrivKey,
 	secret pnet.PSK,
 	listenAddrs []multiaddr.Multiaddr,
+	ds datastore.Batching,
 	opts ...libp2p.Option,
 ) (host.Host, *dualdht.DHT, error) {
 
@@ -53,7 +54,7 @@ func SetupLibp2p(
 		libp2p.PrivateNetwork(secret),
 		transports,
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
-			ddht, err = newDHT(ctx, h)
+			ddht, err = newDHT(ctx, h, ds)
 			return ddht, err
 		}),
 	}
@@ -69,12 +70,12 @@ func SetupLibp2p(
 	return h, ddht, nil
 }
 
-func newDHT(ctx context.Context, h host.Host) (*dualdht.DHT, error) {
+func newDHT(ctx context.Context, h host.Host, ds datastore.Batching) (*dualdht.DHT, error) {
 	dhtOpts := []dualdht.Option{
 		dualdht.DHTOption(dht.NamespacedValidator("pk", record.PublicKeyValidator{})),
-		dualdht.DHTOption(dht.NamespacedValidator("ipns", ipns.Validator{KeyBook: h.Peerstore()})),
 		dualdht.DHTOption(dht.Concurrency(10)),
 		dualdht.DHTOption(dht.Mode(dht.ModeAuto)),
+		dualdht.DHTOption(dht.Datastore(ds)),
 	}
 
 	return dualdht.New(ctx, h, dhtOpts...)

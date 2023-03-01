@@ -15,4 +15,6 @@ type CidInfo struct {
 type Protocol interface {
 	Add(reader io.Reader) (string, error)
 	Cat(cid string) (io.ReadCloser, error)
+	Del(cid string) error
+	Move(s, d string) error
 }

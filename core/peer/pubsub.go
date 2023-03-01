@@ -11,7 +11,10 @@ import (
 
 const pubsubTopic = "/libp2p/peer/update/1.0.0"
 
-func pubsubHandler(ctx context.Context, sub *pubsub.Subscription) {
+func pubsubHandler(ctx context.Context, sub *pubsub.Subscription, handler func(*UpdatePeer)) {
+	if handler == nil {
+		return
+	}
 	defer sub.Cancel()
 	for {
 		select {
@@ -24,17 +27,14 @@ func pubsubHandler(ctx context.Context, sub *pubsub.Subscription) {
 				continue
 			}
 
-			req := &Request{}
+			req := &UpdatePeer{}
 			err = proto.Unmarshal(msg.Data, req)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				continue
 			}
 
-			switch req.Type {
-			case Request_SEND_MESSAGE:
-			case Request_UPDATE_PEER:
-			}
+			handler(req)
 		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"log"
 
 	httpclient "github.com/ipfs/go-ipfs-http-client"
+	"github.com/ipfs/interface-go-ipfs-core/path"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -28,6 +29,14 @@ func (protocol *IPFS) Cat(cid string) (io.ReadCloser, error) {
 		return nil, err
 	}
 	return response.Output, response.Error
+}
+
+func (protocol *IPFS) Del(cid string) error {
+	return protocol.client.Pin().Rm(context.Background(), path.New(cid))
+}
+
+func (protocol *IPFS) Move(s, d string) error {
+	return protocol.client.Pin().Update(context.Background(), path.New(s), path.New(d))
 }
 
 func NewIPFS(addr string) *IPFS {

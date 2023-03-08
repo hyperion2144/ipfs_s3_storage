@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/pnet"
@@ -88,6 +89,9 @@ func (c *Config) BootstrapMultiAddrs() []peer.AddrInfo {
 			log.Fatalf("[fatal]: load bootstrap address failed: %s", err)
 		}
 		bootstrapPeers = append(bootstrapPeers, ma)
+	}
+	if len(bootstrapPeers) == 0 {
+		bootstrapPeers = dht.DefaultBootstrapPeers
 	}
 	peers, _ := peer.AddrInfosFromP2pAddrs(bootstrapPeers...)
 	return peers

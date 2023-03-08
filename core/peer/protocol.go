@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -47,7 +46,7 @@ func streamHandler(handler func(reader io.Reader) (string, error)) func(s networ
 		if handler == nil {
 			return
 		}
-		log.Println("Got a new stream!")
+		logger.Info("Got a new stream!")
 		defer s.Close()
 
 		if cid, err := handler(bufio.NewReader(s)); err != nil {

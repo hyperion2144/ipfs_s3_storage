@@ -43,7 +43,7 @@ func NewNode(
 		return nil, err
 	}
 
-	p := peer.New(ctx, ds, nil, h, dht, &peer.Config{
+	p := peer.New(ctx, ds, h, dht, &peer.Config{
 		ReprovideInterval: 12 * time.Hour,
 		MessageHandler: func(message *peer.SendMessage) error {
 			switch message.GetType() {
@@ -67,7 +67,7 @@ func NewNode(
 	}, nil
 }
 
-func (n *Node) UpdatePeer() error {
+func (n *Node) Run() error {
 	request := peer.UpdatePeer{
 		Peer: &peer.UpdatePeer_Peer{
 			Cid: n.p.HostAddr(),

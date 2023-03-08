@@ -3,16 +3,19 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/op/go-logging"
+
 	"github.com/hyperion2144/ipfs_s3_storage/config"
 	"github.com/hyperion2144/ipfs_s3_storage/core/protocol"
 	"github.com/hyperion2144/ipfs_s3_storage/storage"
 )
+
+var logger = logging.MustGetLogger("storage/main")
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -30,23 +33,28 @@ func main() {
 	}
 	if *root == "" {
 		*root, _ = os.UserHomeDir()
-		*root = filepath.Join(*root, ".s3node")
+		*root = filepath.Join(*root, ".storage-node")
+	}
+
+	var bootstraps []string
+	if *bootstrap != "" {
+		bootstraps = strings.Split(*bootstrap, ";")
 	}
 
 	ipfs := protocol.NewIPFS(*ipfsAddress)
 	node, err := storage.NewNode(ctx, ipfs, &config.Config{
 		Address:   *address,
 		Root:      *root,
-		Bootstrap: strings.Split(*bootstrap, ";"),
+		Bootstrap: bootstraps,
 	})
 	if err != nil {
 		panic(err)
 	}
 
 	for {
-		err = node.UpdatePeer()
+		err = node.Run()
 		if err != nil {
-			log.Printf("[warn]: update peer info failed: %s", err)
+			logger.Warningf("update peer info failed: %s", err)
 		}
 		time.Sleep(time.Second * 10)
 	}

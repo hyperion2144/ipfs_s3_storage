@@ -4,33 +4,41 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"sync"
 	"time"
 
-	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-datastore"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	exchange "github.com/ipfs/go-ipfs-exchange-interface"
-	offline "github.com/ipfs/go-ipfs-exchange-offline"
-	provider "github.com/ipfs/go-ipfs-provider"
-	"github.com/ipfs/go-ipfs-provider/queue"
-	"github.com/ipfs/go-ipfs-provider/simple"
-	"github.com/ipfs/go-libipfs/bitswap"
-	"github.com/ipfs/go-libipfs/bitswap/network"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
 	coreNetwork "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/core/routing"
+	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	rhost "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/op/go-logging"
 )
 
 var (
 	defaultReprovideInterval = 12 * time.Hour
+
+	logger = logging.MustGetLogger("peer")
 )
+
+type mdnsNotifee struct {
+	h   host.Host
+	ctx context.Context
+}
+
+func (m *mdnsNotifee) HandlePeerFound(pi peer.AddrInfo) {
+	logger.Infof("find peer %s, connecting...", pi.String())
+
+	err := m.h.Connect(m.ctx, pi)
+	if err != nil {
+		logger.Errorf("connect to %s failed: %v", pi.String(), err)
+	}
+}
 
 // Config wraps configuration options for the Peer.
 type Config struct {
@@ -62,11 +70,6 @@ type Peer struct {
 	dht   routing.Routing
 	store datastore.Batching
 
-	bstore     blockstore.Blockstore
-	bserv      blockservice.BlockService
-	exch       exchange.Interface
-	reprovider provider.System
-
 	topic      *pubsub.Topic
 	routedHost *rhost.RoutedHost
 }
@@ -74,7 +77,6 @@ type Peer struct {
 func New(
 	ctx context.Context,
 	datastore datastore.Batching,
-	blockstore blockstore.Blockstore,
 	host host.Host,
 	dht routing.Routing,
 	cfg *Config,
@@ -101,9 +103,9 @@ func New(
 	// by encapsulating both addresses:
 	// addr := routedHost.Addrs()[0]
 	addrs := p.routedHost.Addrs()
-	log.Println("I can be reached at:")
+	logger.Info("I can be reached at:")
 	for _, addr := range addrs {
-		log.Println(addr.Encapsulate(hostAddr))
+		logger.Info(addr.Encapsulate(hostAddr))
 	}
 
 	// Set a stream handler on host A. MessageProtocol is
@@ -113,83 +115,17 @@ func New(
 
 	err := p.setupPubsub()
 	if err != nil {
-		log.Fatalf("setup peer pubsub failed: %s", err)
+		logger.Fatalf("setup peer pubsub failed: %s", err)
 	}
 
-	err = p.setupBlockstore(blockstore)
-	if err != nil {
-		log.Fatalf("setup peer blockstore failed: %s", err)
-	}
-
-	err = p.setupReprovider()
-	if err != nil {
-		log.Fatalf("setup peer reprovider failed: %s", err)
+	mdnsService := mdns.NewMdnsService(host, "", &mdnsNotifee{h: host, ctx: ctx})
+	if err = mdnsService.Start(); err != nil {
+		logger.Fatalf("start mdns service failed: %s", err)
 	}
 
 	go p.autoclose()
 
 	return p
-}
-
-func (p *Peer) setupBlockstore(bs blockstore.Blockstore) error {
-	var err error
-	if bs == nil {
-		bs = blockstore.NewBlockstore(p.store)
-	}
-
-	// Support Identity multihashes.
-	bs = blockstore.NewIdStore(bs)
-
-	if !p.cfg.UncachedBlockstore {
-		bs, err = blockstore.CachedBlockstore(p.ctx, bs, blockstore.DefaultCacheOpts())
-		if err != nil {
-			return err
-		}
-	}
-	p.bstore = bs
-	return nil
-}
-
-func (p *Peer) setupBlockService() error {
-	if p.cfg.Offline {
-		p.bserv = blockservice.New(p.bstore, offline.Exchange(p.bstore))
-		return nil
-	}
-
-	bswapnet := network.NewFromIpfsHost(p.host, p.dht)
-	bswap := bitswap.New(p.ctx, bswapnet, p.bstore)
-	p.bserv = blockservice.New(p.bstore, bswap)
-	p.exch = bswap
-	return nil
-}
-
-func (p *Peer) setupReprovider() error {
-	if p.cfg.Offline || p.cfg.ReprovideInterval < 0 {
-		p.reprovider = provider.NewOfflineProvider()
-		return nil
-	}
-
-	newQueue, err := queue.NewQueue(p.ctx, "repro", p.store)
-	if err != nil {
-		return err
-	}
-
-	prov := simple.NewProvider(
-		p.ctx,
-		newQueue,
-		p.dht,
-	)
-
-	reprov := simple.NewReprovider(
-		p.ctx,
-		p.cfg.ReprovideInterval,
-		p.dht,
-		simple.NewBlockstoreProvider(nil),
-	)
-
-	p.reprovider = provider.NewSystem(prov, reprov)
-	p.reprovider.Run()
-	return nil
 }
 
 func (p *Peer) setupPubsub() error {
@@ -212,8 +148,6 @@ func (p *Peer) setupPubsub() error {
 
 func (p *Peer) autoclose() {
 	<-p.ctx.Done()
-	_ = p.reprovider.Close()
-	_ = p.bserv.Close()
 	_ = p.topic.Close()
 }
 
@@ -231,7 +165,7 @@ func (p *Peer) NewStream(proto, target string) (coreNetwork.Stream, error) {
 		return nil, err
 	}
 
-	log.Println("opening stream")
+	logger.Info("opening stream")
 
 	// make a new stream from host B to host
 	s, err := p.routedHost.NewStream(
@@ -262,10 +196,10 @@ func (p *Peer) Bootstrap(peers []peer.AddrInfo) {
 			defer wg.Done()
 			err := p.host.Connect(p.ctx, pinfo)
 			if err != nil {
-				log.Printf("[warn]: %s", err)
+				logger.Warning(err)
 				return
 			}
-			log.Printf("[info]: Connected to %s", pinfo.ID)
+			logger.Infof("Connected to %s", pinfo.ID)
 			connected <- struct{}{}
 		}(pinfo)
 	}
@@ -280,12 +214,12 @@ func (p *Peer) Bootstrap(peers []peer.AddrInfo) {
 		i++
 	}
 	if nPeers := len(peers); i < nPeers/2 {
-		log.Printf("[warn]: only connected to %d bootstrap peers out of %d", i, nPeers)
+		logger.Warningf("only connected to %d bootstrap peers out of %d", i, nPeers)
 	}
 
 	err := p.dht.Bootstrap(p.ctx)
 	if err != nil {
-		log.Printf("[error]: %s", err)
+		logger.Error(err)
 		return
 	}
 }

@@ -2,7 +2,6 @@ package mongo
 
 import (
 	"context"
-	"log"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -27,7 +26,7 @@ func (m *Mongo) Close() error {
 func NewMongo(address string) *Mongo {
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(address))
 	if err != nil {
-		log.Fatalf("connect to mongo failed: %s", err)
+		logger.Fatalf("connect to mongo failed: %s", err)
 	}
 
 	return &Mongo{client: client}

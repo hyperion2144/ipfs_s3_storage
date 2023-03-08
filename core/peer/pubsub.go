@@ -2,8 +2,6 @@ package peer
 
 import (
 	"context"
-	"fmt"
-	"os"
 
 	"github.com/golang/protobuf/proto"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -23,14 +21,14 @@ func pubsubHandler(ctx context.Context, sub *pubsub.Subscription, handler func(*
 		default:
 			msg, err := sub.Next(ctx)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				logger.Error(err)
 				continue
 			}
 
 			req := &UpdatePeer{}
 			err = proto.Unmarshal(msg.Data, req)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				logger.Error(err)
 				continue
 			}
 

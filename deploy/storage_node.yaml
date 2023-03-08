@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storage-node
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: storage-node
+  template:
+    metadata:
+      labels:
+        app: storage-node
+    spec:
+      containers:
+        - name: ipfs
+          image: "ipfs/kubo:latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 4001
+              protocol: TCP
+              name: swarm
+            - containerPort: 5001
+              protocol: TCP
+              name: gateway
+            - containerPort: 8080
+              protocol: TCP
+              name: gateway
+          envFrom:
+            - secretRef:
+                name: swarm-key
+          env:
+            - name: IPFS_SWARM_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: ipfs
+                  name: swarm-key
+          livenessProbe:
+            tcpSocket:
+              port: swarm
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+            periodSeconds: 15
+      volumes:
+        - name: swarm-key
+          secret:
+            secretName: swarm-key
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: storage-node
+  labels:
+    app: storage-node
+spec:
+  type: NodePort
+  selector:
+    app: storage-node
+  ports:
+    - port: 5001
+      targetPort: gateway
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: swarm-key
+stringData:
+  ipfs: |
+    /key/swarm/psk/1.0.0/
+    /base16/
+    677d1d5286b0e52fd5dd28174ed993a35c3c0b46a442ad90f9f627ba33ced045%
+  storage: |
+    /key/swarm/psk/1.0.0/
+    /base16/
+    523846ee6574a509469a6c5f9123d3de8ea75dd9b36fa1856641291334f64328%
+    

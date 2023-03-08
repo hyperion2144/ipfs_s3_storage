@@ -7,7 +7,10 @@ type Service interface {
 }
 
 type DB interface {
-	Collection(name string) Collection
+	CreateCollection(name string) (Collection, error)
+	Collection(name string) (Collection, error)
+	ListCollection() ([]Collection, error)
+	DeleteCollection(name string) error
 }
 
 type Collection interface {

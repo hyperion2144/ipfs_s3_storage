@@ -3,12 +3,14 @@ package protocol
 import (
 	"context"
 	"io"
-	"log"
 
 	httpclient "github.com/ipfs/go-ipfs-http-client"
 	"github.com/ipfs/interface-go-ipfs-core/path"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/op/go-logging"
 )
+
+var logger = logging.MustGetLogger("protocol/ipfs")
 
 var _ Protocol = (*IPFS)(nil)
 
@@ -42,11 +44,11 @@ func (protocol *IPFS) Move(s, d string) error {
 func NewIPFS(addr string) *IPFS {
 	maddr, err := multiaddr.NewMultiaddr(addr)
 	if err != nil {
-		log.Fatalf("parse ipfs multiaddr failed: %s", err)
+		logger.Fatalf("parse ipfs multiaddr failed: %s", err)
 	}
 	api, err := httpclient.NewApi(maddr)
 	if err != nil {
-		log.Fatalf("create ipfs http client failed: %s", err)
+		logger.Fatalf("create ipfs http client failed: %s", err)
 	}
 	return &IPFS{client: api}
 }

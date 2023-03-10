@@ -5,11 +5,13 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+
+	proto2 "github.com/hyperion2144/ipfs_s3_storage/core/proto"
 )
 
 const pubsubTopic = "/libp2p/peer/update/1.0.0"
 
-func pubsubHandler(ctx context.Context, sub *pubsub.Subscription, handler func(*UpdatePeer)) {
+func pubsubHandler(ctx context.Context, sub *pubsub.Subscription, handler func(*proto2.UpdatePeer)) {
 	if handler == nil {
 		return
 	}
@@ -25,7 +27,7 @@ func pubsubHandler(ctx context.Context, sub *pubsub.Subscription, handler func(*
 				continue
 			}
 
-			req := &UpdatePeer{}
+			req := &proto2.UpdatePeer{}
 			err = proto.Unmarshal(msg.Data, req)
 			if err != nil {
 				logger.Error(err)

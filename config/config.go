@@ -35,12 +35,13 @@ func (c *Config) PrivateNetworkKey() pnet.PSK {
 		log.Fatalf("[fatal]: open private network secret key failed: %s", err)
 	}
 	defer file.Close()
-	b, err := io.ReadAll(file)
+
+	psk, err := pnet.DecodeV1PSK(file)
 	if err != nil {
-		log.Fatalf("[fatal]: read private network secret key failed: %s", err)
+		log.Fatalf("[fatal]: decode private network secret key failed: %s", err)
 	}
 
-	return b
+	return psk
 }
 
 func (c *Config) PrivateNodeKey() crypto.PrivKey {

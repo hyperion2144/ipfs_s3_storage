@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/op/go-logging"
+	"google.golang.org/grpc"
+
+	gostream "github.com/libp2p/go-libp2p-gostream"
 
 	"github.com/hyperion2144/ipfs_s3_storage/config"
+	"github.com/hyperion2144/ipfs_s3_storage/core/proto"
 	"github.com/hyperion2144/ipfs_s3_storage/core/protocol"
 	"github.com/hyperion2144/ipfs_s3_storage/storage"
 )
@@ -48,14 +52,19 @@ func main() {
 		Bootstrap: bootstraps,
 	})
 	if err != nil {
-		panic(err)
+		logger.Fatal(err)
 	}
 
-	for {
-		err = node.Run()
-		if err != nil {
-			logger.Warningf("update peer info failed: %s", err)
-		}
-		time.Sleep(time.Second * 10)
+	listener, err := gostream.Listen(node.Peer.RoutedHost(), proto.FileChannelProtocol)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
+	go node.Background()
+
+	rpc := grpc.NewServer()
+	proto.RegisterFileChannelServer(rpc, node)
+	if err := rpc.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+		logger.Fatal(err)
 	}
 }

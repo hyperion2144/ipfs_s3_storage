@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package peer;
+option go_package = ".;proto";
+
+message AddRequest {
+  bytes chunk = 1;
+}
+
+message AddReply {
+  string cid = 1;
+}
+
+message RemoveRequest {
+  string cid = 1;
+}
+
+message RemoveReply {}
+
+message MoveRequest {
+  string src = 1;
+  string dest = 2;
+}
+
+message MoveReply {}
+
+message UpdatePeer {
+  string cid = 1;
+}
+
+// The file channel service definition.
+service FileChannel {
+  // Add file.
+  rpc Add (stream AddRequest) returns (AddReply) {}
+  // Remove file.
+  rpc Remove (RemoveRequest) returns (RemoveReply) {}
+  // Move file.
+  rpc Move (MoveRequest) returns (MoveReply) {}
+}

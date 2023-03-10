@@ -12,6 +12,7 @@ import (
 	"github.com/hyperion2144/ipfs_s3_storage/config"
 	"github.com/hyperion2144/ipfs_s3_storage/core/datastore"
 	"github.com/hyperion2144/ipfs_s3_storage/core/peer"
+	"github.com/hyperion2144/ipfs_s3_storage/core/proto"
 )
 
 const (
@@ -25,11 +26,10 @@ type NodeManager struct {
 	sync.RWMutex
 }
 
-func (m *NodeManager) FindPeerHandle(p *peer.UpdatePeer) {
+func (m *NodeManager) FindPeerHandle(p *proto.UpdatePeer) {
 	m.Lock()
 	{
-		n := p.GetPeer()
-		m.nodes[n.GetCid()] = time.Now()
+		m.nodes[p.GetCid()] = time.Now()
 	}
 	m.Unlock()
 }
@@ -104,4 +104,18 @@ func (n *Node) Run() {
 			n.manager.DeadlineTask()
 		}
 	}
+}
+
+func (n *Node) Nodes() []string {
+	var nodes []string
+
+	n.manager.RLock()
+	{
+		for cid := range n.manager.nodes {
+			nodes = append(nodes, cid)
+		}
+	}
+	n.manager.RUnlock()
+
+	return nodes
 }

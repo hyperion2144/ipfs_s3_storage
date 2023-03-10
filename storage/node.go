@@ -2,21 +2,26 @@ package storage
 
 import (
 	"context"
-	"io"
 	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/op/go-logging"
 
 	"github.com/hyperion2144/ipfs_s3_storage/config"
 	"github.com/hyperion2144/ipfs_s3_storage/core/datastore"
 	"github.com/hyperion2144/ipfs_s3_storage/core/peer"
+	pb "github.com/hyperion2144/ipfs_s3_storage/core/proto"
 	"github.com/hyperion2144/ipfs_s3_storage/core/protocol"
 )
 
+var logger = logging.MustGetLogger("storage/node")
+
 type Node struct {
-	p *peer.Peer
+	pb.UnimplementedFileChannelServer
+
+	Peer *peer.Peer
 
 	protocol protocol.Protocol
 
@@ -45,38 +50,46 @@ func NewNode(
 
 	p := peer.New(ctx, ds, h, dht, &peer.Config{
 		ReprovideInterval: 12 * time.Hour,
-		MessageHandler: func(message *peer.SendMessage) error {
-			switch message.GetType() {
-			case peer.SendMessage_Remove:
-				return protocol.Del(message.GetCid())
-			case peer.SendMessage_Move:
-				return protocol.Move(message.GetFrom(), message.GetCid())
-			}
-			return nil
-		},
-		StreamHandler: func(reader io.Reader) (string, error) {
-			return protocol.Add(reader)
-		},
 	})
 	p.Bootstrap(cfg.BootstrapMultiAddrs())
 
 	return &Node{
-		p:        p,
+		Peer:     p,
 		protocol: protocol,
 		host:     h,
 	}, nil
 }
 
-func (n *Node) Run() error {
-	request := peer.UpdatePeer{
-		Peer: &peer.UpdatePeer_Peer{
-			Cid: n.p.HostAddr(),
-		},
+func (n *Node) Background() error {
+	request := pb.UpdatePeer{
+		Cid: n.Peer.HostAddr(),
 	}
 	b, err := proto.Marshal(&request)
 	if err != nil {
 		return err
 	}
 
-	return n.p.Publish(context.Background(), b)
+	for {
+		err := n.Peer.Publish(context.Background(), b)
+		if err != nil {
+			logger.Warningf("update peer info failed: %s", err)
+		}
+		time.Sleep(time.Second * 10)
+	}
+
+}
+
+func (n *Node) Add(request pb.FileChannel_AddServer) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (n *Node) Remove(ctx context.Context, request *pb.RemoveRequest) (*pb.RemoveReply, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (n *Node) Move(ctx context.Context, request *pb.MoveRequest) (*pb.MoveReply, error) {
+	//TODO implement me
+	panic("implement me")
 }

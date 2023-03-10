@@ -3,14 +3,14 @@ package gateway
 import (
 	"context"
 
-	"github.com/hyperion2144/ipfs_s3_storage/core/metadata"
-	"github.com/hyperion2144/ipfs_s3_storage/core/metadata/mongo"
 	"github.com/minio/cli"
 	"github.com/minio/madmin-go"
 	minio "github.com/minio/minio/cmd"
+
+	"github.com/hyperion2144/ipfs_s3_storage/core/metadata/mongo"
 )
 
-const IPFSBackendGateway = "Gateway-GATEWAY"
+const IPFSBackendGateway = "ipfs"
 
 func init() {
 	const ipfsGatewayTemplate = `NAME:
@@ -37,6 +37,11 @@ EXAMPLES:
 		HideHelpCommand:    true,
 		Flags: []cli.Flag{
 			cli.StringFlag{
+				Name:  "p2p",
+				Usage: "p2p address",
+				Value: "/ip4/127.0.0.1/tcp/5080",
+			},
+			cli.StringFlag{
 				Name:  "path",
 				Usage: "root path",
 			},
@@ -55,12 +60,12 @@ EXAMPLES:
 // Handler for 'minio gateway nas' command line.
 func ipfsGatewayMain(ctx *cli.Context) {
 	// Validate gateway arguments.
-	if !ctx.Args().Present() || ctx.Args().First() == "help" {
+	if ctx.Args().First() == "help" {
 		cli.ShowCommandHelpAndExit(ctx, IPFSBackendGateway, 1)
 	}
 
 	minio.StartGateway(ctx, &Gateway{
-		address:   ctx.GlobalString("address"),
+		address:   ctx.String("p2p"),
 		root:      ctx.String("path"),
 		bootstrap: ctx.StringSlice("bootstrap"),
 		mongo:     ctx.String("mongo"),
@@ -82,7 +87,13 @@ func (g *Gateway) Name() string {
 
 // NewGatewayLayer returns nas gatewaylayer.
 func (g *Gateway) NewGatewayLayer(madmin.Credentials) (minio.ObjectLayer, error) {
-	newObject, err := NewIPFSObjects(minio.GlobalContext, g.address, g.root, g.bootstrap, mongo.NewMongo(g.mongo).DB("metadata"))
+	newObject, err := NewIPFSObjects(
+		minio.GlobalContext,
+		g.address,
+		g.root,
+		g.bootstrap,
+		mongo.NewMongo(g.mongo).DB("metadata"),
+	)
 	if err != nil {
 		return nil, err
 	}

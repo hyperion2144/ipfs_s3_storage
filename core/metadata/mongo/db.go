@@ -18,8 +18,8 @@ type db struct {
 	db *mongo.Database
 }
 
-func (m *db) CreateCollection(name string) (metadata.Collection, error) {
-	err := m.db.CreateCollection(context.Background(), name)
+func (m *db) CreateCollection(ctx context.Context, name string) (metadata.Collection, error) {
+	err := m.db.CreateCollection(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -27,22 +27,22 @@ func (m *db) CreateCollection(name string) (metadata.Collection, error) {
 	return m.Collection(name)
 }
 
-func (m *db) ListCollection() ([]metadata.Collection, error) {
-	names, err := m.db.ListCollectionNames(context.Background(), bson.D{})
+func (m *db) ListCollection(ctx context.Context) (map[string]metadata.Collection, error) {
+	names, err := m.db.ListCollectionNames(ctx, bson.D{})
 	if err != nil {
 		return nil, err
 	}
 
-	var collections []metadata.Collection
+	collections := make(map[string]metadata.Collection)
 	for _, name := range names {
 		collection := m.db.Collection(name)
-		collections = append(collections, collection)
+		collections[name] = collection
 	}
 	return collections, nil
 }
 
-func (m *db) DeleteCollection(name string) error {
-	return m.db.Collection(name).Drop(context.Background())
+func (m *db) DeleteCollection(ctx context.Context, name string) error {
+	return m.db.Collection(name).Drop(ctx)
 }
 
 func (m *db) Collection(name string) (metadata.Collection, error) {

@@ -23,6 +23,7 @@
         <method importPath="math/rand" receiver="*Rand" name="Read" />
         <method importPath="os" receiver="*File" name="Close" />
         <method importPath="github.com/libp2p/go-libp2p/core/network" receiver="Stream" name="Close" />
+        <method importPath="github.com/hyperion2144/ipfs_s3_storage/storage" receiver="*Node" name="Background" />
       </methods>
     </inspection_tool>
   </profile>

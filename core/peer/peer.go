@@ -3,7 +3,6 @@ package peer
 import (
 	"context"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 
@@ -15,9 +14,13 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/core/routing"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
+	discovery "github.com/libp2p/go-libp2p/p2p/discovery/routing"
+	"github.com/libp2p/go-libp2p/p2p/discovery/util"
 	rhost "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/op/go-logging"
+
+	"github.com/hyperion2144/ipfs_s3_storage/core/proto"
 )
 
 var (
@@ -26,18 +29,30 @@ var (
 	logger = logging.MustGetLogger("peer")
 )
 
-type mdnsNotifee struct {
-	h   host.Host
-	ctx context.Context
+// discoveryNotifee gets notified when we find a new peer via mDNS discovery
+type discoveryNotifee struct {
+	h host.Host
 }
 
-func (m *mdnsNotifee) HandlePeerFound(pi peer.AddrInfo) {
-	logger.Infof("find peer %s, connecting...", pi.String())
-
-	err := m.h.Connect(m.ctx, pi)
+// HandlePeerFound connects to peers discovered via mDNS. Once they're connected,
+// the PubSub system will automatically start interacting with them if they also
+// support PubSub.
+func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
+	logger.Infof("discovered new peer %s\n", pi.ID.String())
+	err := n.h.Connect(context.Background(), pi)
 	if err != nil {
-		logger.Errorf("connect to %s failed: %v", pi.String(), err)
+		logger.Infof("error connecting to peer %s: %s\n", pi.ID.String(), err)
 	}
+
+	logger.Infof("connected peer %s success", pi.ID.String())
+}
+
+// setupDiscovery creates an mDNS discovery service and attaches it to the libp2p Host.
+// This lets us automatically discover peers on the same LAN and connect to them.
+func setupDiscovery(h host.Host) error {
+	// setup mDNS discovery to find local peers
+	s := mdns.NewMdnsService(h, "", &discoveryNotifee{h: h})
+	return s.Start()
 }
 
 // Config wraps configuration options for the Peer.
@@ -50,9 +65,7 @@ type Config struct {
 	// caching is not needed.
 	UncachedBlockstore bool
 
-	TopicHandler   func(*UpdatePeer)
-	MessageHandler func(*SendMessage) error
-	StreamHandler  func(reader io.Reader) (string, error)
+	TopicHandler func(*proto.UpdatePeer)
 }
 
 func (cfg *Config) setDefaults() {
@@ -108,19 +121,17 @@ func New(
 		logger.Info(addr.Encapsulate(hostAddr))
 	}
 
-	// Set a stream handler on host A. MessageProtocol is
-	// a user-defined protocol name.
-	p.routedHost.SetStreamHandler(MessageProtocol, messageHandler(p.cfg.MessageHandler))
-	p.routedHost.SetStreamHandler(StreamProtocol, streamHandler(p.cfg.StreamHandler))
+	// setup peer discovery
+	go p.Discover("")
+
+	// setup local mDNS discovery
+	if err := setupDiscovery(host); err != nil {
+		logger.Fatal(err)
+	}
 
 	err := p.setupPubsub()
 	if err != nil {
 		logger.Fatalf("setup peer pubsub failed: %s", err)
-	}
-
-	mdnsService := mdns.NewMdnsService(host, "", &mdnsNotifee{h: host, ctx: ctx})
-	if err = mdnsService.Start(); err != nil {
-		logger.Fatalf("start mdns service failed: %s", err)
 	}
 
 	go p.autoclose()
@@ -159,6 +170,10 @@ func (p *Peer) HostAddr() string {
 	return p.routedHost.ID().String()
 }
 
+func (p *Peer) RoutedHost() host.Host {
+	return p.routedHost
+}
+
 func (p *Peer) NewStream(proto, target string) (coreNetwork.Stream, error) {
 	peerid, err := peer.Decode(target)
 	if err != nil {
@@ -180,12 +195,18 @@ func (p *Peer) Publish(ctx context.Context, data []byte) error {
 	return p.topic.Publish(ctx, data)
 }
 
-// Bootstrap is an optional helper to connect to the given peers and bootstrap
+// Bootstrap is an optional helper to connect to the given peers and bootstrap21
 // the Peer DHT (and Bitswap). This is a best-effort function. Errors are only
 // logged and a warning is printed when less than half of the given peers
 // could be contacted. It is fine to pass a list where some peers will not be
 // reachable.
 func (p *Peer) Bootstrap(peers []peer.AddrInfo) {
+	err := p.dht.Bootstrap(p.ctx)
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+
 	connected := make(chan struct{})
 
 	var wg sync.WaitGroup
@@ -216,10 +237,44 @@ func (p *Peer) Bootstrap(peers []peer.AddrInfo) {
 	if nPeers := len(peers); i < nPeers/2 {
 		logger.Warningf("only connected to %d bootstrap peers out of %d", i, nPeers)
 	}
+}
 
-	err := p.dht.Bootstrap(p.ctx)
-	if err != nil {
-		logger.Error(err)
-		return
+func (p *Peer) Discover(rendezvous string) {
+	var routingDiscovery = discovery.NewRoutingDiscovery(p.dht)
+
+	util.Advertise(p.ctx, routingDiscovery, rendezvous)
+
+	ticker := time.NewTicker(time.Second * 1)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case <-ticker.C:
+
+			peers, err := util.FindPeers(p.ctx, routingDiscovery, rendezvous)
+			if err != nil {
+				logger.Error(err)
+				continue
+			}
+
+			for _, pi := range peers {
+				if pi.ID == p.host.ID() {
+					continue
+				}
+				if p.host.Network().Connectedness(pi.ID) != coreNetwork.Connected {
+					_, err = p.host.Network().DialPeer(p.ctx, pi.ID)
+					logger.Infof("Connected to peer %s\n", pi.ID.String())
+
+					if err != nil {
+						logger.Errorf("Connect peer %s failed: %s\n", pi.ID.String(), err)
+						continue
+					}
+
+					logger.Infof("Connected peer %s success.", pi.ID.String())
+				}
+			}
+		}
 	}
 }

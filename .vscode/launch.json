@@ -1,0 +1,36 @@
+{
+  "configurations": [
+    {
+      "name": "launch api",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${fileDirname}",
+      "env": {
+        "MINIO_ROOT_USER": "minioadmin",
+        "MINIO_ROOT_PASSWORD": "minioadmin"
+      },
+      "args": [
+        "gateway",
+        "ipfs",
+        "--p2p",
+        "/ip4/127.0.0.1/tcp/5080",
+        "--path",
+        ".api",
+        "--mongo",
+        "mongodb://adminuser:password123@localhost:30436"
+      ]
+    },
+    {
+      "name": "launch storage",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${fileDirname}",
+      "env": {
+        "NODE_ROOT_PATH": ".node"
+      },
+      "args": []
+    }
+  ]
+}

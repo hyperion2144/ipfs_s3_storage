@@ -94,8 +94,18 @@ func (o *IPFSObjects) StorageInfo(context.Context) (minio.StorageInfo, []error) 
 	return minio.StorageInfo{}, nil
 }
 
-func (o *IPFSObjects) MakeBucketWithLocation(ctx context.Context, bucket string, _ minio.MakeBucketOptions) error {
-	b, err := o.metadata.CreateCollection(ctx, bucket)
+func (o *IPFSObjects) MakeBucketWithLocation(
+	ctx context.Context,
+	bucket string,
+	opts minio.MakeBucketOptions,
+) error {
+	b, err := o.metadata.CreateCollection(ctx, bucket, metadata.CollectionOptions{
+		ID:         metadata.CollectionOptionID,
+		Name:       bucket,
+		CreatedAt:  opts.CreatedAt,
+		Locking:    opts.LockEnabled,
+		Versioning: opts.VersioningEnabled,
+	})
 	if err != nil {
 		return err
 	}
@@ -108,19 +118,108 @@ func (o *IPFSObjects) MakeBucketWithLocation(ctx context.Context, bucket string,
 	return nil
 }
 
-func (o *IPFSObjects) GetBucketInfo(ctx context.Context, bucket string, opts minio.BucketOptions) (bucketInfo minio.BucketInfo, err error) {
-	//TODO implement me
-	panic("implement me")
+func (o *IPFSObjects) GetBucketInfo(
+	ctx context.Context,
+	bucket string,
+	opts minio.BucketOptions,
+) (bucketInfo minio.BucketInfo, err error) {
+	c, err := o.getCollection(bucket)
+	if err != nil {
+		return bucketInfo, err
+	}
+
+	collectionOption, err := c.Options(ctx)
+	if err != nil {
+		return bucketInfo, err
+	}
+
+	bucketInfo = minio.BucketInfo{
+		Name:          bucket,
+		Created:       collectionOption.CreatedAt,
+		Deleted:       collectionOption.DeletedAt,
+		Versioning:    collectionOption.Versioning,
+		ObjectLocking: collectionOption.Locking,
+	}
+
+	return
+}
+
+// getCollection Get Collection from location collections map.
+func (o *IPFSObjects) getCollection(name string) (metadata.Collection, error) {
+	var c metadata.Collection
+	var err error
+
+	o.collectlock.RLock()
+	defer o.collectlock.RUnlock()
+
+	var ok bool
+	if c, ok = o.collections[name]; !ok {
+		c, err = o.metadata.Collection(name)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return c, nil
 }
 
 func (o *IPFSObjects) ListBuckets(ctx context.Context, opts minio.BucketOptions) (buckets []minio.BucketInfo, err error) {
-	//TODO implement me
-	panic("implement me")
+	o.collectlock.RLock()
+	defer o.collectlock.RUnlock()
+
+	for _, collection := range o.collections {
+		opt, err := collection.Options(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		// if don't show deleted bucket, skip the it.
+		if !opts.Deleted && !opt.DeletedAt.IsZero() {
+			continue
+		}
+
+		buckets = append(buckets, minio.BucketInfo{
+			Name:          collection.Name(),
+			Created:       opt.CreatedAt,
+			Deleted:       opt.DeletedAt,
+			Versioning:    opt.Versioning,
+			ObjectLocking: opt.Locking,
+		})
+	}
+
+	return
 }
 
 func (o *IPFSObjects) DeleteBucket(ctx context.Context, bucket string, opts minio.DeleteBucketOptions) error {
-	//TODO implement me
-	panic("implement me")
+	o.collectlock.Lock()
+	defer o.collectlock.Unlock()
+
+	c, ok := o.collections[bucket]
+	if !ok {
+		return minio.BucketNotFound{}
+	}
+
+	opt, err := c.Options(ctx)
+	if err != nil {
+		opt = metadata.CollectionOptions{
+			ID:        metadata.CollectionOptionID,
+			Name:      bucket,
+			CreatedAt: time.Now(),
+		}
+	}
+
+	err = o.metadata.DeleteCollection(ctx, bucket)
+	if err != nil {
+		if !opts.NoRecreate {
+			c, cerr := o.metadata.CreateCollection(ctx, bucket, opt)
+			if cerr != nil {
+				return cerr
+			}
+			o.collections[bucket] = c
+		}
+		return err
+	}
+	return nil
 }
 
 func (o *IPFSObjects) ListObjects(ctx context.Context, bucket, prefix, marker, delimiter string, maxKeys int) (result minio.ListObjectsInfo, err error) {

@@ -18,13 +18,23 @@ type db struct {
 	db *mongo.Database
 }
 
-func (m *db) CreateCollection(ctx context.Context, name string) (metadata.Collection, error) {
+func (m *db) CreateCollection(
+	ctx context.Context,
+	name string,
+	opts metadata.CollectionOptions,
+) (metadata.Collection, error) {
 	err := m.db.CreateCollection(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 
-	return m.Collection(name)
+	c := m.db.Collection(name)
+	_, err = c.InsertOne(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return newCollection(c), nil
 }
 
 func (m *db) ListCollection(ctx context.Context) (map[string]metadata.Collection, error) {
@@ -35,8 +45,8 @@ func (m *db) ListCollection(ctx context.Context) (map[string]metadata.Collection
 
 	collections := make(map[string]metadata.Collection)
 	for _, name := range names {
-		collection := m.db.Collection(name)
-		collections[name] = collection
+		c := m.db.Collection(name)
+		collections[name] = newCollection(c)
 	}
 	return collections, nil
 }
